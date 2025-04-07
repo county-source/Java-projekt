@@ -1,6 +1,7 @@
 package business;
 
 import javafx.animation.KeyFrame;
+import javafx.animation.SequentialTransition;
 import javafx.animation.Timeline;
 import javafx.animation.TranslateTransition;
 import javafx.geometry.Insets;
@@ -8,8 +9,7 @@ import javafx.geometry.Pos;
 import javafx.scene.*;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
-import javafx.scene.layout.StackPane;
-import javafx.scene.layout.VBox;
+import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.PhongMaterial;
 import javafx.scene.shape.Box;
@@ -28,8 +28,9 @@ public class GameScene {
     private final GameState gameState;
     private final Random random = new Random();
 
-    // Tentokrát máme rollingNumber (slot machine) + log
+    // Kostka (slot-machine animace)
     private final Label rollingNumber = new Label("?");
+    // Log větší, tučný, zarovnaný pod tlačítkem
     private final Label logLabel = new Label("Hra začíná!");
 
     private final VBox playerStats = new VBox(5);
@@ -40,9 +41,10 @@ public class GameScene {
     private Box highlightBox = null;
 
     public GameScene(Stage stage, List<String> playerNames) {
+        // 1) GameState
         gameState = new GameState(playerNames);
 
-        // Vykreslit 3D
+        // 2) Vykreslení 3D
         BoardUtils.addBoardTiles(root3D, gameState.getTiles());
         BoardUtils.addLighting(root3D);
         for (Player p : gameState.getPlayers()) {
@@ -64,34 +66,44 @@ public class GameScene {
         subScene.setCamera(camera);
         subScene.setFill(Color.LIGHTBLUE);
 
-        // Klíč: SubScene nechytá myš
-        subScene.setPickOnBounds(false);
+        subScene.setPickOnBounds(false); // aby šly klikat overlay prvky
 
-        // rollingNumber
+        // Slot-machine číslo (velké)
         rollingNumber.setStyle("-fx-font-size: 48px; -fx-text-fill: white;");
 
-        // logLabel
-        logLabel.setTextFill(Color.WHITE);
-        logLabel.setStyle("-fx-font-size: 16px;");
+        // Log – větší, tučný
+        logLabel.setStyle("-fx-font-size: 20px; -fx-font-weight: bold; -fx-text-fill: white;");
         logLabel.setWrapText(true);
         logLabel.setMaxWidth(600);
 
-        // Panel pro texty (rollingNumber + logLabel)
-        VBox textBox = new VBox(15, rollingNumber, logLabel);
-        textBox.setAlignment(Pos.CENTER);
-        textBox.setPadding(new Insets(10));
+        // Tlačítko
+        Button rollBtn = new Button("Hodit kostku");
+        rollBtn.setStyle("""
+            -fx-font-size: 24px;
+            -fx-background-color: #2196F3;
+            -fx-text-fill: white;
+            -fx-padding: 10 20;
+            -fx-font-weight: bold;
+            -fx-cursor: hand;
+        """);
+        rollBtn.setOnAction(e -> nextTurn());
 
-        // Panel se staty hráčů
+        // VBox overlay – [ slotNumber, tlačítko, log ]
+        VBox overlay = new VBox(15, rollingNumber, rollBtn, logLabel);
+        overlay.setAlignment(Pos.CENTER);
+        overlay.setPadding(new Insets(10));
+
+        // Panel se staty hráčů (vpravo nahoře)
         updatePlayerStats();
         playerStats.setStyle("-fx-font-size: 14px;");
         playerStats.setPadding(new Insets(15));
         playerStats.setTranslateX(720);
         playerStats.setTranslateY(-360);
 
-        // Hlavní root
-        root.getChildren().addAll(subScene, textBox, playerStats);
+        // root
+        root.getChildren().addAll(subScene, overlay, playerStats);
 
-        // Rohy
+        // Rohové labely
         for (int i = 0; i < gameState.getPlayers().size(); i++) {
             Label cornerLabel = new Label();
             cornerLabel.setStyle("""
@@ -111,70 +123,26 @@ public class GameScene {
             root.getChildren().add(cornerLabel);
         }
 
-        // TADY vytvoříme topPane s tlačítkem
-        Button rollBtn = new Button("🎲 Hod kostkou");
-        rollBtn.setStyle("""
-            -fx-font-size: 28px;
-            -fx-background-color: #2196F3;
-            -fx-text-fill: white;
-            -fx-padding: 10 20;
-            -fx-font-weight: bold;
-            -fx-cursor: hand;
-        """);
-        rollBtn.setOnAction(e -> nextTurn());
-        // Opatření pro "nad vším"
-        rollBtn.setViewOrder(-9999); // menší = více vpředu
-
-        StackPane topPane = new StackPane(rollBtn);
-        topPane.setAlignment(Pos.BOTTOM_CENTER);
-        // Bez pozadí
-        topPane.setStyle("-fx-background-color: transparent;");
-        // Taky do root
-        root.getChildren().add(topPane);
-
-        // Nastav pořadí: subScene dozadu, textBox dopředu, playerStats dopředu, cornerLabels dopředu, topPane nejvíc
-        subScene.toBack();
-        textBox.toFront();
-        playerStats.toFront();
-        topPane.toFront();
-        for (Label cl : cornerLabels) {
-            cl.toFront();
-        }
-
-        // Scene
         scene = new Scene(root, 1920, 1080, true);
+        subScene.toBack();
+        overlay.toFront();
+        playerStats.toFront();
+        cornerLabels.forEach(Node::toFront);
+
         stage.setScene(scene);
         stage.setFullScreen(true);
     }
 
+    /**
+     * Spustí slot-machine animaci kostky a poté tile-by-tile pohyb.
+     */
     private void nextTurn() {
-        // "Slot machine" animace
-        rollingNumber.setText("?");
-        final int steps = 10;
-        Timeline timeline = new Timeline();
-        for (int i = 0; i < steps; i++) {
-            KeyFrame kf = new KeyFrame(
-                    Duration.millis((i+1)*100),
-                    e -> rollingNumber.setText(String.valueOf(random.nextInt(6)+1))
-            );
-            timeline.getKeyFrames().add(kf);
-        }
-        timeline.setOnFinished(e -> {
-            int finalRoll = random.nextInt(6)+1;
-            rollingNumber.setText(String.valueOf(finalRoll));
-            doDiceResult(finalRoll);
-        });
-        timeline.play();
-    }
-
-    private void doDiceResult(int roll) {
         List<Player> active = gameState.getActivePlayers();
         if (active.size() == 1) {
             Player winner = active.get(0);
             logLabel.setText("Vítězí " + winner.getName() + " se zůstatkem " + winner.getMoney() + " Kč!");
             return;
         }
-
         Player player = gameState.getCurrentPlayer();
         if (player.isBankrupt()) {
             logLabel.setText(player.getName() + " je vyřazen.");
@@ -188,16 +156,39 @@ public class GameScene {
             return;
         }
 
-        logLabel.setText("🎲 " + player.getName() + " hodil " + roll);
+        rollingNumber.setText("?");
+        final int steps = 10;
+        Timeline timeline = new Timeline();
+        for (int i = 0; i < steps; i++) {
+            KeyFrame kf = new KeyFrame(Duration.millis((i+1)*100), e -> {
+                int fake = random.nextInt(6)+1;
+                rollingNumber.setText(String.valueOf(fake));
+            });
+            timeline.getKeyFrames().add(kf);
+        }
+        timeline.setOnFinished(e -> {
+            int finalRoll = random.nextInt(6)+1;
+            rollingNumber.setText(String.valueOf(finalRoll));
 
-        int oldPos = player.getPosition();
-        player.move(roll);
-        int newPos = player.getPosition();
+            doDiceResult(finalRoll);
+        });
+        timeline.play();
+    }
 
-        removeHighlight();
-        highlightTile(newPos);
+    /**
+     * Po animaci kostky – figurka se pohne pole-po-poli.
+     */
+    private void doDiceResult(int roll) {
+        Player player = gameState.getCurrentPlayer();
+        logLabel.setText(player.getName() + " hodil: " + roll);
 
-        animateMove(player, oldPos, newPos, () -> {
+        // Zjistíme starou a novou pozici (už nastavenou v Player? – Nyní ne!)
+        // Místo standard: player.move(roll); => Děláme tile-by-tile
+        // => rovnou tileByTileMovement
+
+        tileByTileMovement(player, roll, () -> {
+            // Po dokončení pohybu...
+            int newPos = player.getPosition(); // teď je posunut
             Tile tile = gameState.getTileAt(newPos);
             BoardUtils.positionPlayers(gameState.getPlayers(), gameState);
 
@@ -211,6 +202,49 @@ public class GameScene {
         });
     }
 
+    /**
+     * Pohyb figurky "pole po poli" – 1 tilesize animace x 'roll' krát.
+     * Po dokončení volá onFinished.
+     */
+    private void tileByTileMovement(Player player, int steps, Runnable onFinished) {
+        // Zjistíme, zda jdeme dopředu nebo dozadu:
+        // V Player je logika, jestli position roste či klesá (možná).
+        // Tady budeme "ručně" krokovat. Předpokládám, že v Player se pohyb standardně
+        // dělá (pos - roll + 40)%40 => proti směru. Můžeš upravit:
+
+        // Nebudeme teď měnit player.position najednou,
+        // ale pohneme se "krok-za-krokem" v animaci a player se aktualizuje postupně.
+
+        SequentialTransition seq = new SequentialTransition();
+
+        for (int i = 0; i < steps; i++) {
+            // 1 krok
+            // posun v Player
+            player.move(1); // voláme move(1) => posune se o 1 pole
+            int newPos = player.getPosition();
+
+            // spočítáme souřadnice
+            double[] pos = BoardUtils.getTilePosition(newPos);
+
+            // TranslateTransition pro 1 krok
+            TranslateTransition tt = new TranslateTransition(Duration.seconds(0.3), player.getFigure());
+            tt.setToX(pos[0]);
+            tt.setToZ(pos[1]);
+            // Ve finále highlight
+            tt.setOnFinished(e -> {
+                removeHighlight();
+                highlightTile(newPos);
+            });
+            seq.getChildren().add(tt);
+        }
+
+        // Po posledním
+        seq.setOnFinished(e -> onFinished.run());
+
+        seq.play();
+    }
+
+    // Odstranění highlight
     private void removeHighlight() {
         if (highlightBox != null) {
             root3D.getChildren().remove(highlightBox);
@@ -218,6 +252,7 @@ public class GameScene {
         }
     }
 
+    // Zvýrazní dané pole (žlutým poloprůhledným čtvercem)
     private void highlightTile(int index) {
         double[] pos = BoardUtils.getTilePosition(index);
         highlightBox = new Box(BoardUtils.TILE_SIZE * 1.1, 1, BoardUtils.TILE_SIZE * 1.1);
@@ -230,30 +265,55 @@ public class GameScene {
         root3D.getChildren().add(highlightBox);
     }
 
-    private void animateMove(Player player, int from, int to, Runnable onFinished) {
-        double[] pos = BoardUtils.getTilePosition(to);
-        TranslateTransition tt = new TranslateTransition(Duration.seconds(0.6), player.getFigure());
-        tt.setToX(pos[0]);
-        tt.setToZ(pos[1]);
-        tt.setOnFinished(e -> onFinished.run());
-        tt.play();
-    }
-
+    /**
+     * Hezký malý horizontální panel pro "Nakup" / "Zavřít".
+     */
     private void showPropertyMenu(Player player, Tile tile) {
-        VBox menu = new VBox(10);
-        menu.setPadding(new Insets(20));
-        menu.setStyle("-fx-background-color: #333333aa; -fx-border-color: white;");
-        menu.setMaxWidth(300);
-        menu.setAlignment(Pos.CENTER);
+        HBox menu = new HBox(20);
+        menu.setPadding(new Insets(15));
+        menu.setStyle("""
+            -fx-background-color: #333333cc;
+            -fx-background-radius: 10;
+            -fx-border-color: white;
+            -fx-border-radius: 10;
+            -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.5), 8,0,4,4);
+        """);
+        menu.setMaxSize(400, 100);
+        menu.setAlignment(Pos.CENTER_LEFT);
+
+        VBox textPart = new VBox(8);
+        textPart.setAlignment(Pos.CENTER_LEFT);
 
         Label title = new Label("Nemovitost: " + tile.getName());
         title.setTextFill(Color.WHITE);
-        title.setStyle("-fx-font-size: 18px;");
+        title.setStyle("-fx-font-size: 16px; -fx-font-weight: bold;");
 
         Label priceLabel = new Label();
-        Button actionBtn = new Button();
-        Button closeBtn = new Button("Zavřít");
+        priceLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: lightgreen;");
+        textPart.getChildren().addAll(title, priceLabel);
 
+        VBox btnPart = new VBox(8);
+        btnPart.setAlignment(Pos.CENTER_RIGHT);
+
+        Button actionBtn = new Button();
+        actionBtn.setStyle("""
+            -fx-font-size: 14px;
+            -fx-background-color: #4CAF50;
+            -fx-text-fill: white;
+            -fx-background-radius: 8;
+            -fx-cursor: hand;
+            -fx-padding: 6 12;
+        """);
+
+        Button closeBtn = new Button("Zavřít");
+        closeBtn.setStyle("""
+            -fx-font-size: 14px;
+            -fx-background-color: #555555;
+            -fx-text-fill: white;
+            -fx-background-radius: 8;
+            -fx-cursor: hand;
+            -fx-padding: 6 12;
+        """);
         closeBtn.setOnAction(e -> {
             root.getChildren().remove(menu);
             logLabel.setText(player.getName() + " odmítl akci na poli.");
@@ -261,11 +321,16 @@ public class GameScene {
             gameState.nextPlayer();
         });
 
+        btnPart.getChildren().addAll(actionBtn, closeBtn);
+        menu.getChildren().addAll(textPart, btnPart);
+
+        StackPane.setAlignment(menu, Pos.CENTER);
+
         if (!tile.isOwned()) {
             priceLabel.setText("Cena: " + tile.getPrice() + " Kč");
             priceLabel.setTextFill(Color.LIGHTGREEN);
-            actionBtn.setText("Koupit");
 
+            actionBtn.setText("Koupit");
             actionBtn.setOnAction(e -> {
                 if (player.getMoney() >= tile.getPrice()) {
                     tile.setOwner(player);
@@ -285,8 +350,16 @@ public class GameScene {
             int cost = tile.getUpgradeCost();
             priceLabel.setText("Upgrade: " + cost + " Kč (úroveň " + tile.getLevel() + ")");
             priceLabel.setTextFill(Color.CYAN);
-            actionBtn.setText("Upgradovat");
 
+            actionBtn.setText("Upgradovat");
+            actionBtn.setStyle("""
+                -fx-font-size: 14px;
+                -fx-background-color: #FF9800;
+                -fx-text-fill: white;
+                -fx-background-radius: 8;
+                -fx-cursor: hand;
+                -fx-padding: 6 12;
+            """);
             actionBtn.setOnAction(e -> {
                 if (player.getMoney() >= cost) {
                     player.subtractMoney(cost);
@@ -303,14 +376,9 @@ public class GameScene {
 
         } else {
             logLabel.setText("Žádná akce dostupná.");
-            root.getChildren().remove(menu);
-            updatePlayerStats();
-            gameState.nextPlayer();
             return;
         }
 
-        menu.getChildren().addAll(title, priceLabel, actionBtn, closeBtn);
-        StackPane.setAlignment(menu, Pos.CENTER);
         root.getChildren().add(menu);
     }
 
@@ -344,6 +412,7 @@ public class GameScene {
         logLabel.setText(log.toString());
     }
 
+    // Přidání domků
     private void addHouseToBoard(Tile tile) {
         removeOldHouses(tile.getIndex());
         double[] pos = BoardUtils.getTilePosition(tile.getIndex());
@@ -361,6 +430,7 @@ public class GameScene {
         }
     }
 
+    // Smazání starých domků
     private void removeOldHouses(int tileIndex) {
         List<Node> toRemove = new ArrayList<>();
         for (Node n : root3D.getChildren()) {
@@ -379,6 +449,7 @@ public class GameScene {
         root3D.getChildren().removeAll(toRemove);
     }
 
+    // Obnovení panelu hráčů + rohových labelů
     private void updatePlayerStats() {
         playerStats.getChildren().clear();
         for (Player p : gameState.getPlayers()) {
